@@ -5,17 +5,11 @@ const http = require("http");
 const { Server } = require("socket.io");
 require("dotenv").config();
 
-const alumniRoutes = require("./routes/alumniRoutes");
-const forumRoutes = require("./routes/forumRoutes");
-const chatRoutes = require("./routes/chatRoutes"); // ✅ Ensure this is correctly imported
-
 const app = express();
-app.use(express.json()); // ✅ Enable JSON handling
-
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
-        origin: "http://localhost:5173",
+        origin: "http://localhost:5173", // Change this if frontend is hosted elsewhere
         methods: ["GET", "POST"],
     },
 });
@@ -23,17 +17,25 @@ const io = new Server(server, {
 app.use(express.json());
 app.use(cors());
 
-// ✅ Ensure routes are used correctly
+// Import Routes
+const alumniRoutes = require("./routes/alumniRoutes");
+const forumRoutes = require("./routes/forumRoutes");
+const chatRoutes = require("./routes/chatRoutes");
+const profileRoutes = require("./routes/profileRoutes"); // ✅ Add this
+const contactRoutes = require("./routes/contactRoutes");
+app.use("/contact", contactRoutes);
+
 app.use("/alumni", alumniRoutes);
 app.use("/forum", forumRoutes);
 app.use("/chat", chatRoutes);
+app.use("/profile", profileRoutes); // ✅ Add this
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log("✅ MongoDB Connected Successfully"))
+    .then(() => console.log("✅ Connected to MongoDB"))
     .catch(err => console.error("❌ MongoDB Connection Error:", err));
 
-// ✅ Ensure `chatRoutes.js` is correctly exported
+// Socket.io for Real-Time Chat
 io.on("connection", (socket) => {
     console.log(`🔗 User connected: ${socket.id}`);
 

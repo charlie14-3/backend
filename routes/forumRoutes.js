@@ -92,15 +92,25 @@ router.delete("/:id", async (req, res) => {
 });
 
 //
-// 📌 **DELETE A REPLY FROM A THREAD**
+// 📌 **DELETE A REPLY (Only by Reply Author)**
 //
-router.delete("/:threadId/reply/:replyId", async (req, res) => {
+router.delete("/:threadId/reply/:replyId/:name", async (req, res) => {
     try {
-        const { threadId, replyId } = req.params;
+        const { threadId, replyId, name } = req.params;
         const thread = await Thread.findById(threadId);
         if (!thread) return res.status(404).json({ message: "Thread not found" });
 
-        thread.replies = thread.replies.filter(reply => reply._id.toString() !== replyId);
+        // ✅ Find the reply
+        const reply = thread.replies.find(r => r._id.toString() === replyId);
+        if (!reply) return res.status(404).json({ message: "Reply not found" });
+
+        // ✅ Check if the user deleting is the original author
+        if (reply.name !== name) {
+            return res.status(403).json({ message: "You can only delete your own reply." });
+        }
+
+        // ✅ Remove the reply
+        thread.replies = thread.replies.filter(r => r._id.toString() !== replyId);
         await thread.save();
 
         res.json(thread);
@@ -109,5 +119,9 @@ router.delete("/:threadId/reply/:replyId", async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+
+
+
 
 module.exports = router;
