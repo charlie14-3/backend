@@ -1,31 +1,65 @@
 const express = require("express");
-const mongoose = require("mongoose");
+const Thread = require("../models/Thread");
+const multer = require("multer");
+const upload = multer({ dest: "uploads/" }); // Store images locally (Use cloud storage for production)
 
 const router = express.Router();
 
-// Define the Thread Schema
-const threadSchema = new mongoose.Schema({
-    name: { type: String, required: true },
-    title: { type: String, required: true },
-    replies: [
-        {
-            name: { type: String, required: true },
-            message: { type: String, required: true },
-            timestamp: { type: Date, default: Date.now }
-        }
-    ],
-    createdAt: { type: Date, default: Date.now }
+// 📌 **CREATE A NEW THREAD**
+router.post("/create-thread", upload.single("image"), async (req, res) => {
+    const { name, title, content, tags } = req.body;
+    const image = req.file ? `/uploads/${req.file.filename}` : ""; // Save image path
+
+    if (!name || !title || !content) {
+        return res.status(400).json({ message: "Name, title, and content are required" });
+    }
+
+    try {
+        const newThread = new Thread({
+            name,
+            title,
+            content,
+            image,
+            tags: tags ? tags.split(",") : [],
+            replies: []
+        });
+
+        await newThread.save();
+        res.status(201).json(newThread);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
 });
 
-// Create the Thread Model
-const Thread = mongoose.model("Thread", threadSchema);
+// 📌 **CREATE A NEW POLL**
+router.post("/create-poll", async (req, res) => {
+    const { name, pollQuestion, pollOptions } = req.body;
 
-//
-// 📌 **GET ALL THREADS**
-//
+    if (!name || !pollQuestion || !pollOptions || pollOptions.length < 2) {
+        return res.status(400).json({ message: "Poll question and at least two options are required" });
+    }
+
+    try {
+        const newPoll = new Thread({
+            name,
+            poll: {
+                question: pollQuestion,
+                options: pollOptions.map(opt => ({ option: opt, votes: 0 })),
+                votedUsers: {}
+            }
+        });
+
+        await newPoll.save();
+        res.status(201).json(newPoll);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 📌 **GET ALL THREADS AND POLLS**
 router.get("/", async (req, res) => {
     try {
-        const threads = await Thread.find().sort({ createdAt: -1 }); // Sort by latest
+        const threads = await Thread.find().sort({ createdAt: -1 });
         res.json(threads);
     } catch (err) {
         console.error("Error fetching threads:", err);
@@ -33,33 +67,40 @@ router.get("/", async (req, res) => {
     }
 });
 
-//
-// 📌 **CREATE A NEW THREAD**
-//
-router.post("/", async (req, res) => {
-    const { name, title } = req.body;
-    if (!name || !title) return res.status(400).json({ message: "Name and title are required" });
-
+// 📌 **GET A SINGLE THREAD OR POLL**
+router.get("/:id", async (req, res) => {
     try {
-        const newThread = new Thread({ name, title, replies: [] });
-        await newThread.save();
+        const thread = await Thread.findById(req.params.id);
+        if (!thread) return res.status(404).json({ message: "Thread not found" });
 
-        // Return updated list
-        const threads = await Thread.find();
-        res.status(201).json(threads);
+        res.json(thread);
     } catch (err) {
-        console.error("Error creating thread:", err);
+        console.error("Error fetching thread:", err);
         res.status(500).json({ error: err.message });
     }
 });
 
-//
+// 📌 **GET THREADS CREATED BY A USER**
+router.get("/my-posts/:name", async (req, res) => {
+    try {
+        const { name } = req.params;
+
+        const threads = await Thread.find({ name });
+        res.json(threads);
+    } catch (err) {
+        console.error("Error fetching user's posts:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
 // 📌 **ADD REPLY TO A THREAD**
-//
 router.post("/:id/reply", async (req, res) => {
     const { id } = req.params;
     const { name, message } = req.body;
-    if (!name || !message) return res.status(400).json({ message: "Name and message are required" });
+
+    if (!name || !message) {
+        return res.status(400).json({ message: "Name and message are required" });
+    }
 
     try {
         const thread = await Thread.findById(id);
@@ -75,25 +116,27 @@ router.post("/:id/reply", async (req, res) => {
     }
 });
 
-//
 // 📌 **DELETE A THREAD**
-//
 router.delete("/:id", async (req, res) => {
     try {
+        const { name } = req.query; // ✅ Get name from query params
         const thread = await Thread.findById(req.params.id);
+
         if (!thread) return res.status(404).json({ message: "Thread not found" });
+
+        // ✅ Ensure only the creator can delete the thread
+        if (thread.name !== name) {
+            return res.status(403).json({ message: "You can only delete your own thread" });
+        }
 
         await thread.deleteOne();
         res.json({ message: "Thread deleted successfully" });
     } catch (err) {
-        console.error("Error deleting thread:", err);
         res.status(500).json({ error: err.message });
     }
 });
 
-//
-// 📌 **DELETE A REPLY (Only by Reply Author)**
-//
+// 📌 **DELETE A REPLY**
 router.delete("/:threadId/reply/:replyId/:name", async (req, res) => {
     try {
         const { threadId, replyId, name } = req.params;
@@ -115,13 +158,46 @@ router.delete("/:threadId/reply/:replyId/:name", async (req, res) => {
 
         res.json(thread);
     } catch (err) {
-        console.error("Error deleting reply:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// 📌 **VOTE IN A POLL**
+router.post("/:id/poll", async (req, res) => {
+    const { id } = req.params;
+    const { userId, optionIndex } = req.body;
+
+    try {
+        const thread = await Thread.findById(id);
+        if (!thread) return res.status(404).json({ message: "Poll not found" });
+
+        if (!thread.poll || optionIndex < 0 || optionIndex >= thread.poll.options.length)
+            return res.status(400).json({ message: "Invalid poll option" });
+
+        if (thread.poll.votedUsers.get(userId))
+            return res.status(400).json({ message: "You have already voted" });
+
+        thread.poll.options[optionIndex].votes += 1;
+        thread.poll.votedUsers.set(userId, true);
+        await thread.save();
+
+        res.json(thread.poll);
+    } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
 
-
+// Route to fetch only polls
+router.get("/polls", async (req, res) => {
+    try {
+        const polls = await Thread.find({ "poll.question": { $ne: "" } }).sort({ createdAt: -1 });
+        res.json(polls);
+    } catch (err) {
+        console.error("Error fetching polls:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
 
 
 module.exports = router;

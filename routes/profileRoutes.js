@@ -1,6 +1,23 @@
 const express = require("express");
 const Profile = require("../models/Profile");
+const multer = require("multer"); // ✅ Import Multer
+const path = require("path");
 const router = express.Router();
+
+// ✅ Configure Multer Storage
+const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+        cb(null, "uploads/"); // Store images in 'uploads' folder
+    },
+    filename: (req, file, cb) => {
+        cb(null, Date.now() + path.extname(file.originalname)); // Unique file name
+    },
+});
+
+const upload = multer({ storage });
+
+// ✅ Serve uploaded files statically
+router.use("/uploads", express.static("uploads"));
 
 // ✅ Fetch User Profile
 router.get("/:name", async (req, res) => {
@@ -14,18 +31,20 @@ router.get("/:name", async (req, res) => {
     }
 });
 
-// ✅ Update Profile
-router.post("/update", async (req, res) => {
+// ✅ Update Profile (With Profile Picture)
+router.post("/update", upload.single("profilePic"), async (req, res) => {
     try {
         const { name, department, degree, about } = req.body;
+        const profilePic = req.file ? req.file.filename : null; // ✅ Store image filename
         let user = await Profile.findOne({ name });
 
         if (!user) {
-            user = new Profile({ name, department, degree, about });
+            user = new Profile({ name, department, degree, about, profilePic });
         } else {
             user.department = department;
             user.degree = degree;
             user.about = about;
+            if (profilePic) user.profilePic = profilePic;
         }
 
         await user.save();
@@ -35,5 +54,6 @@ router.post("/update", async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 
 module.exports = router;
