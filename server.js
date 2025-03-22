@@ -17,6 +17,10 @@ const io = new Server(server, {
 app.use(express.json());
 app.use(cors());
 
+//profilepic
+app.use("/uploads", express.static("uploads"));
+
+
 // Import Routes
 const alumniRoutes = require("./routes/alumniRoutes");
 const forumRoutes = require("./routes/forumRoutes");
