@@ -1,81 +1,97 @@
 const express = require("express");
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-const { GoogleSpreadsheet } = require("google-spreadsheet");
-const { JWT } = require("google-auth-library"); // ✅ Required for authentication
-const Alumni = require("../models/Alumni");
 require("dotenv").config();
+const Alumni = require("../models/Alumni");  // Make sure the path is correct based on your file structure
 
 const router = express.Router();
 
-// ✅ Google Sheets Setup
-const googleAuth = new JWT({
-    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-    key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, "\n"), // ✅ Fix newline issues
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
-});
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+// 🔐 Store tokens temporarily (in-memory or you can use MongoDB if preferred)
+let resetTokens = {}; // key: email, value: token
 
-const doc = new GoogleSpreadsheet(process.env.GOOGLE_SHEET_ID, googleAuth);
+// ✅ Reusable mail sender function
+const sendResetEmail = async (email, token) => {
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS,
+    },
+  });
 
-// ✅ Function to Connect to Google Sheets
-const connectToGoogleSheet = async () => {
-    try {
-        console.log("🔄 Connecting to Google Sheets...");
-        await doc.loadInfo(); // ✅ Load Sheet Info
-        console.log(`✅ Connected to Google Sheet: ${doc.title}`);
-        return doc;
-    } catch (err) {
-        console.error("❌ Google Sheets Auth Error:", err);
-        throw err;
-    }
+  const resetLink = `${process.env.FRONTEND_URL}/reset-password/${token}`;
+
+  const mailOptions = {
+    from: `"EES IIT BHU" <${process.env.EMAIL_USER}>`,
+    to: email,
+    subject: "Password Reset - EES Alumni",
+    html: `
+      <p>Click the button below to reset your password:</p>
+      <a href="${resetLink}" style="padding: 10px 20px; background: #007bff; color: white; text-decoration: none; border-radius: 5px;">Reset Password</a>
+      <p>If the button doesn't work, use this link:</p>
+      <p>${resetLink}</p>
+    `,
+  };
+
+  await transporter.sendMail(mailOptions);
 };
 
-// ✅ Alumni Registration Route
-router.post("/register", async (req, res) => {
-    const { name, email, password, occupation, interests, experience } = req.body;
-
-    if (!name || !email || !password || !occupation) {
-        return res.status(400).json({ message: "All required fields must be filled." });
+router.post("/request-reset", async (req, res) => {
+    const { email } = req.body;
+  
+    try {
+      const alumni = await Alumni.findOne({ email });
+      if (!alumni) return res.status(404).json({ message: "Alumni not found" });
+  
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiry = Date.now() + 1000 * 60 * 15; // 15 min expiry
+  
+      alumni.resetToken = token;
+      alumni.resetTokenExpiry = expiry;
+      await alumni.save();
+  
+      await sendResetEmail(email, token); // ✅ SEND EMAIL HERE
+  
+      res.status(200).json({ message: "Reset email sent successfully" });
+    } catch (err) {
+      console.error("❌ Error requesting password reset:", err);
+      res.status(500).json({ message: "Internal server error" });
     }
+  });
+  
+
+router.post("/reset-password/:token", async (req, res) => {
+    const { token } = req.params;
+    const { password } = req.body;
 
     try {
-        // 🔹 Check if alumni already exists
-        const existingAlumni = await Alumni.findOne({ email });
-        if (existingAlumni) {
-            return res.status(400).json({ message: "Alumni already registered. Please log in." });
-        }
-
-        // 🔹 Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // 🔹 Save alumni in MongoDB
-        const newAlumni = new Alumni({ name, email, password: hashedPassword, occupation, interests, experience });
-        await newAlumni.save();
-
-        // 🔹 Save data in Google Sheets
-        const doc = await connectToGoogleSheet(); // ✅ Ensure authentication before using
-        const sheet = doc.sheetsByIndex[0]; // ✅ Select the first sheet
-        await sheet.loadHeaderRow(); // ✅ Load headers
-
-        // ✅ Append row to Google Sheets
-        await sheet.addRow({
-            Name: name || "Unknown",  // ✅ Ensures name is not blank
-            Email: email,
-            Occupation: occupation,
-            Interests: interests || "Not Provided",
-            Experience: experience || "Not Provided",
+        const alumni = await Alumni.findOne({
+            resetToken: token,
+            resetTokenExpiry: { $gt: Date.now() }
         });
 
-        console.log("✅ Google Sheets Updated Successfully!");
+        if (!alumni) return res.status(400).json({ message: "Invalid or expired token" });
 
-        res.status(201).json({ message: "Alumni registered successfully!" });
+        const hashedPassword = await bcrypt.hash(password, 10);
+        alumni.password = hashedPassword;
+        alumni.resetToken = undefined;
+        alumni.resetTokenExpiry = undefined;
+
+        await alumni.save();
+
+        res.status(200).json({ message: "Password reset successful" });
     } catch (err) {
-        console.error("❌ Error registering alumni:", err);
-        res.status(500).json({ message: "Internal Server Error" });
+        res.status(500).json({ message: err.message });
     }
 });
 
-// ✅ Alumni Login Route
+
+
+
+
+// ✅ Alumni Login Route (MongoDB)
 router.post("/login", async (req, res) => {
     const { email, password } = req.body;
 
@@ -84,22 +100,52 @@ router.post("/login", async (req, res) => {
     }
 
     try {
-        // 🔹 Check if alumni exists
-        const alumni = await Alumni.findOne({ email });
+        console.log("🔄 Checking if alumni exists...");
+        // 🔹 Check if alumni exists in MongoDB
+        const alumni = await Alumni.findOne({ email: new RegExp('^' + email + '$', 'i') });
+        console.log("Alumni found in database:", alumni);  // Add this line to check what data is returned
+
         if (!alumni) {
+            return res.status(401).json({ message: `Alumni not found with the email: ${email}` });
+        }
+
+        if (!alumni) {
+            console.error("❌ Alumni not found with the email:", email);
             return res.status(401).json({ message: "Alumni not found. Please register." });
         }
 
-        // 🔹 Compare passwords
+        console.log("🔄 Alumni found, verifying password...");
+
+        // 🔹 Compare password
+        console.log("Password entered:", password);  // Log the entered password
+        console.log("Stored password hash:", alumni.password);  // Log the stored hash
         const isMatch = await bcrypt.compare(password, alumni.password);
+        console.log("Password match:", isMatch);  // Log the result of comparison
+
         if (!isMatch) {
-            return res.status(401).json({ message: "Invalid credentials." });
+            console.error("❌ Invalid password for email:", email);
+            return res.status(401).json({ message: "Invalid password." });
         }
 
+        console.log("🔄 Password matched, generating token...");
         // 🔹 Generate JWT token
-        const token = jwt.sign({ id: alumni._id, email: alumni.email }, process.env.JWT_SECRET, { expiresIn: "7d" });
+        const token = jwt.sign(
+            { id: alumni._id, email: alumni.email },
+            process.env.JWT_SECRET,
+            { expiresIn: "7d" }
+        );
 
-        res.status(200).json({ message: "Login successful", alumni, token });
+        res.status(200).json({
+            message: "Login successful",
+            alumni: {
+                name: alumni.name,
+                occupation: alumni.occupation,
+                email: alumni.email,
+                photo: alumni.photo,
+                sector: alumni.sector,
+            },
+            token,
+        });
     } catch (err) {
         console.error("❌ Error logging in:", err);
         res.status(500).json({ message: "Internal Server Error" });
@@ -107,38 +153,21 @@ router.post("/login", async (req, res) => {
 });
 
 
+
 //extra
-// ✅ Fetch Alumni from Google Sheets & MongoDB
+// Backend code for fetching data from Google Sheets
+// ✅ Get all alumni from MongoDB
 router.get("/", async (req, res) => {
     try {
-        console.log("🔄 Fetching alumni data...");
-
-        // 🔹 Connect to Google Sheets
-        const doc = await connectToGoogleSheet();
-        const sheet = doc.sheetsByIndex[0]; // ✅ Select first sheet
-        await sheet.loadHeaderRow(); // ✅ Load headers
-
-        // 🔹 Read rows from Google Sheets
-        const rows = await sheet.getRows();
-        const googleAlumni = rows.map(row => ({
-            name: row.Name || "Unknown",
-            occupation: row.Occupation || "Not Provided",
-        }));
-
-        // 🔹 Fetch alumni from MongoDB
-        const dbAlumni = await Alumni.find({}, "name occupation -_id");
-
-        // 🔹 Merge data
-        const mergedAlumni = [...dbAlumni, ...googleAlumni];
-
-        console.log("✅ Alumni data fetched successfully!");
-
-        res.status(200).json(mergedAlumni);
+        const alumni = await Alumni.find({}, { password: 0, __v: 0 }); // exclude password and version key
+        res.status(200).json(alumni);
     } catch (err) {
-        console.error("❌ Error fetching alumni data:", err);
+        console.error("❌ Error fetching alumni from DB:", err);
         res.status(500).json({ message: "Internal Server Error" });
     }
 });
+
+
 
 
 module.exports = router;

@@ -4,6 +4,8 @@ const cors = require("cors");
 const http = require("http");
 const { Server } = require("socket.io");
 require("dotenv").config();
+const Alumni = require("./models/Alumni");  // Add this line at the top of server.js
+const path = require("path");
 
 const app = express();
 const server = http.createServer(app);
@@ -18,7 +20,7 @@ app.use(express.json());
 app.use(cors());
 
 //profilepic
-app.use("/uploads", express.static("uploads"));
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 
 // Import Routes
@@ -38,6 +40,15 @@ app.use("/profile", profileRoutes); // ✅ Add this
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("✅ Connected to MongoDB"))
     .catch(err => console.error("❌ MongoDB Connection Error:", err));
+    mongoose.connection.once("open", () => {
+        console.log("Connected to MongoDB Atlas successfully.");
+      });
+      const testConnection = async () => {
+        const alumniCount = await Alumni.countDocuments();
+        console.log("Number of alumni in database:", alumniCount);
+      };
+      testConnection();
+      
 
 // Socket.io for Real-Time Chat
 io.on("connection", (socket) => {

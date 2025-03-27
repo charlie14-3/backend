@@ -67,18 +67,33 @@ router.get("/", async (req, res) => {
     }
 });
 
-// 📌 **GET A SINGLE THREAD OR POLL**
-router.get("/:id", async (req, res) => {
+// Route to fetch only polls
+router.get("/polls", async (req, res) => {
     try {
-        const thread = await Thread.findById(req.params.id);
-        if (!thread) return res.status(404).json({ message: "Thread not found" });
-
-        res.json(thread);
+        const polls = await Thread.find({ "poll.question": { $ne: "" } }).sort({ createdAt: -1 });
+        res.json(polls);
     } catch (err) {
-        console.error("Error fetching thread:", err);
+        console.error("Error fetching polls:", err);
         res.status(500).json({ error: err.message });
     }
 });
+
+// 📌 GET ALL THREADS WITH SORTING
+router.get("/threads", async (req, res) => {
+    const sort = req.query.sort || "latest"; // default sort
+
+    let sortQuery = { createdAt: -1 }; // default: latest
+    if (sort === "upvotes") sortQuery = { upvotes: -1 };
+    if (sort === "downvotes") sortQuery = { downvotes: -1 };
+
+    try {
+        const threads = await Thread.find().sort(sortQuery);
+        res.json(threads);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
 
 // 📌 **GET THREADS CREATED BY A USER**
 router.get("/my-posts/:name", async (req, res) => {
@@ -92,6 +107,26 @@ router.get("/my-posts/:name", async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
+
+
+// 📌 **GET A SINGLE THREAD OR POLL**
+router.get("/:id", async (req, res) => {
+    try {
+        const thread = await Thread.findById(req.params.id);
+        if (!thread) return res.status(404).json({ message: "Thread not found" });
+
+        res.json(thread);
+    } catch (err) {
+        console.error("Error fetching thread:", err);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+
+
+
 
 // 📌 **ADD REPLY TO A THREAD**
 router.post("/:id/reply", async (req, res) => {
@@ -162,7 +197,7 @@ router.delete("/:threadId/reply/:replyId/:name", async (req, res) => {
     }
 });
 
-// 📌 **VOTE IN A POLL**
+// 📌 VOTE IN A POLL
 router.post("/:id/poll", async (req, res) => {
     const { id } = req.params;
     const { userId, optionIndex } = req.body;
@@ -181,23 +216,47 @@ router.post("/:id/poll", async (req, res) => {
         thread.poll.votedUsers.set(userId, true);
         await thread.save();
 
-        res.json(thread.poll);
+        res.json(thread); // ✅ return the full thread
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-
-// Route to fetch only polls
-router.get("/polls", async (req, res) => {
+// 📌 UPVOTE or DOWNVOTE a thread or poll
+router.post("/:id/vote", async (req, res) => {
+    const { userId, type } = req.body; // type = "upvote" or "downvote"
+    const { id } = req.params;
+  
+    if (!["upvote", "downvote"].includes(type)) {
+      return res.status(400).json({ message: "Invalid vote type" });
+    }
+  
     try {
-        const polls = await Thread.find({ "poll.question": { $ne: "" } }).sort({ createdAt: -1 });
-        res.json(polls);
+      const thread = await Thread.findById(id);
+      if (!thread) return res.status(404).json({ message: "Thread or poll not found" });
+  
+      const previousVote = thread.votes.usersVoted.get(userId);
+  
+      // Undo previous vote
+      if (previousVote === "upvote") thread.votes.upvotes--;
+      if (previousVote === "downvote") thread.votes.downvotes--;
+  
+      // Apply new vote
+      if (type === "upvote") thread.votes.upvotes++;
+      if (type === "downvote") thread.votes.downvotes++;
+  
+      thread.votes.usersVoted.set(userId, type);
+  
+      await thread.save();
+      res.json(thread);
     } catch (err) {
-        console.error("Error fetching polls:", err);
-        res.status(500).json({ error: err.message });
+      res.status(500).json({ error: err.message });
     }
-});
+  });
+  
+
+
+
 
 
 module.exports = router;

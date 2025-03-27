@@ -34,7 +34,7 @@ router.get("/:name", async (req, res) => {
 // ✅ Update Profile (With Profile Picture)
 router.post("/update", upload.single("profilePic"), async (req, res) => {
     try {
-        const { name, department, degree, about } = req.body;
+        const { name, department, degree, about, occupation, sector } = req.body;
         const profilePic = req.file ? req.file.filename : null; // ✅ Store image filename
         let user = await Profile.findOne({ name });
 
@@ -44,6 +44,9 @@ router.post("/update", upload.single("profilePic"), async (req, res) => {
             user.department = department;
             user.degree = degree;
             user.about = about;
+            user.occupation = occupation;
+            user.sector = sector;
+
             if (profilePic) user.profilePic = profilePic;
         }
 
