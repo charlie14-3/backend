@@ -198,6 +198,7 @@ router.delete("/:threadId/reply/:replyId/:name", async (req, res) => {
 });
 
 // 📌 VOTE IN A POLL
+// 📌 VOTE IN A POLL
 router.post("/:id/poll", async (req, res) => {
     const { id } = req.params;
     const { userId, optionIndex } = req.body;
@@ -209,15 +210,22 @@ router.post("/:id/poll", async (req, res) => {
         if (!thread.poll || optionIndex < 0 || optionIndex >= thread.poll.options.length)
             return res.status(400).json({ message: "Invalid poll option" });
 
-        if (thread.poll.votedUsers.get(userId))
+        // ✅ Fix: Check if user has already voted (now works for alumni too)
+        if (thread.poll.votedUsers.get(userId)) {
             return res.status(400).json({ message: "You have already voted" });
+        }
+        
 
         thread.poll.options[optionIndex].votes += 1;
-        thread.poll.votedUsers.set(userId, true);
-        await thread.save();
 
-        res.json(thread); // ✅ return the full thread
+        // ✅ Fix: Track the userId
+        thread.poll.votedUsers.set(userId, true);
+
+
+        await thread.save();
+        res.json(thread);
     } catch (err) {
+        console.error("❌ Error voting in poll:", err);
         res.status(500).json({ error: err.message });
     }
 });

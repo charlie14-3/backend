@@ -20,16 +20,23 @@ const upload = multer({ storage });
 router.use("/uploads", express.static("uploads"));
 
 // ✅ Fetch User Profile
+// ✅ Fetch User Profile
 router.get("/:name", async (req, res) => {
     try {
         const user = await Profile.findOne({ name: req.params.name });
         if (!user) return res.status(404).json({ error: "Profile not found" });
-        res.status(200).json(user);
+
+        // ✅ Determine user type
+        const isAlumni = user.occupation || user.sector;
+        const userType = isAlumni ? "alumni" : "student";
+
+        res.status(200).json({ ...user.toObject(), type: userType });
     } catch (err) {
         console.error("❌ Error fetching profile:", err);
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // ✅ Update Profile (With Profile Picture)
 router.post("/update", upload.single("profilePic"), async (req, res) => {
