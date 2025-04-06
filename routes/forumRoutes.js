@@ -207,20 +207,18 @@ router.post("/:id/poll", async (req, res) => {
         const thread = await Thread.findById(id);
         if (!thread) return res.status(404).json({ message: "Poll not found" });
 
-        if (!thread.poll || optionIndex < 0 || optionIndex >= thread.poll.options.length)
+        if (!thread.poll || optionIndex < 0 || optionIndex >= thread.poll.options.length) {
             return res.status(400).json({ message: "Invalid poll option" });
+        }
 
-        // ✅ Fix: Check if user has already voted (now works for alumni too)
-        if (thread.poll.votedUsers.get(userId)) {
+        const safeUserKey = Buffer.from(userId).toString("base64"); // ✅ Encode userId safely
+
+        if (thread.poll.votedUsers.get(safeUserKey)) {
             return res.status(400).json({ message: "You have already voted" });
         }
-        
 
         thread.poll.options[optionIndex].votes += 1;
-
-        // ✅ Fix: Track the userId
-        thread.poll.votedUsers.set(userId, true);
-
+        thread.poll.votedUsers.set(safeUserKey, true);
 
         await thread.save();
         res.json(thread);
@@ -229,6 +227,7 @@ router.post("/:id/poll", async (req, res) => {
         res.status(500).json({ error: err.message });
     }
 });
+
 
 // 📌 UPVOTE or DOWNVOTE a thread or poll
 router.post("/:id/vote", async (req, res) => {
@@ -243,17 +242,18 @@ router.post("/:id/vote", async (req, res) => {
       const thread = await Thread.findById(id);
       if (!thread) return res.status(404).json({ message: "Thread or poll not found" });
   
-      const previousVote = thread.votes.usersVoted.get(userId);
-  
-      // Undo previous vote
-      if (previousVote === "upvote") thread.votes.upvotes--;
-      if (previousVote === "downvote") thread.votes.downvotes--;
-  
-      // Apply new vote
-      if (type === "upvote") thread.votes.upvotes++;
-      if (type === "downvote") thread.votes.downvotes++;
-  
-      thread.votes.usersVoted.set(userId, type);
+      const safeUserKey = Buffer.from(userId).toString("base64");
+
+const previousVote = thread.votes.usersVoted.get(safeUserKey);
+
+if (previousVote === "upvote") thread.votes.upvotes--;
+if (previousVote === "downvote") thread.votes.downvotes--;
+
+if (type === "upvote") thread.votes.upvotes++;
+if (type === "downvote") thread.votes.downvotes++;
+
+thread.votes.usersVoted.set(safeUserKey, type);
+
   
       await thread.save();
       res.json(thread);

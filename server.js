@@ -10,15 +10,24 @@ const path = require("path");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: {
-        origin: "http://localhost:5173", // Change this if frontend is hosted elsewhere
-        methods: ["GET", "POST"],
-    },
+  cors: {
+      origin: process.env.FRONTEND_URL,
+      methods: ["GET", "POST"],
+  },
 });
 
 app.use(express.json());
-app.use(cors());
-
+const allowedOrigins = [
+  process.env.FRONTEND_URL,
+  "http://localhost:5173", // keep this only if you still test locally
+];
+  
+app.use(cors({
+  origin: allowedOrigins,
+  credentials: true,
+}));
+  
+  
 //profilepic
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
