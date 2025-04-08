@@ -11,21 +11,38 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-      origin: process.env.FRONTEND_URL,
-      methods: ["GET", "POST"],
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error("❌ Socket.IO not allowed by CORS"));
+      }
+    },
+    methods: ["GET", "POST"],
+    credentials: true
   },
 });
 
+
 app.use(express.json());
 const allowedOrigins = [
+  "http://localhost:5173",
   process.env.FRONTEND_URL,
-  "http://localhost:5173", // keep this only if you still test locally
 ];
-  
+
+// CORS for Express REST APIs
 app.use(cors({
-  origin: allowedOrigins,
+  origin: function (origin, callback) {
+    // Allow requests with no origin like mobile apps or curl
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error("❌ Not allowed by CORS"));
+    }
+  },
   credentials: true,
 }));
+
   
   
 //profilepic
