@@ -62,6 +62,13 @@ app.use("/forum", forumRoutes);
 app.use("/chat", chatRoutes);
 app.use("/profile", profileRoutes); // ✅ Add this
 
+
+app.use(express.static(path.join(__dirname, "build")));
+
+// React catch-all: this must come last
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "build", "index.html"));
+});
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
     .then(() => console.log("✅ Connected to MongoDB"))
@@ -88,6 +95,8 @@ io.on("connection", (socket) => {
         console.log("❌ User disconnected");
     });
 });
+
+
 
 const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
