@@ -63,11 +63,12 @@ app.use("/chat", chatRoutes);
 app.use("/profile", profileRoutes); // ✅ Add this
 
 
-app.use(express.static(path.join(__dirname, "build")));
+// Serve static files from Vite's dist folder
+app.use(express.static(path.join(__dirname, "dist")));
 
-// React catch-all: this must come last
+// Catch-all: send index.html for all unmatched routes (React Router)
 app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "build", "index.html"));
+  res.sendFile(path.join(__dirname, "dist", "index.html"));
 });
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
